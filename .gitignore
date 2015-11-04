@@ -1,1 +1,5 @@
 *.png
+*.o
+*.dat
+lab2rgb
+sf1_cpu
