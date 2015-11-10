@@ -74,112 +74,122 @@ inline float profilingTime (const char *s, time_t *whichClock)
 /***************************************************************************
  Test a simple image
  ***************************************************************************/
+
+void processPixel(Sample<float> s, StrucClassSSF<float> *forest, ConfigReader *cr, int lPXOff, int lPYOff, cv::Rect& box, vector<cv::Mat>& result) {
+	cv::Point pt;
+	// Obtain forest predictions
+	// Iterate over all trees
+	for(size_t t = 0; t < cr->numTrees; ++t)
+	{
+		// The prediction itself.
+		// The given Sample object s contains the imageId and the pixel coordinates.
+		// p is an iterator to a vector over labels (attribut hist of class Prediction)
+		// This labels correspond to a patch centered on position s
+		// (this is the structured version of a random forest!)
+		vector<uint32_t>::const_iterator p = forest[t].predictPtr(s);
+
+
+		for (pt.y=(int)s.y-lPYOff;pt.y<=(int)s.y+(int)lPYOff;++pt.y)
+		for (pt.x=(int)s.x-(int)lPXOff;pt.x<=(int)s.x+(int)lPXOff;++pt.x,++p)
+		{
+			if (*p<0 || *p >= (size_t)cr->numLabels)
+			{
+				std::cerr << "Invalid label in prediction: " << (int) *p << "\n";
+				exit(1);
+			}
+
+			if (box.contains(pt))
+			{
+				result[*p].at<float>(pt) += 1;
+
+			}
+		}
+
+	}
+}
+ 
+void processOneImage(int iImage, StrucClassSSF<float> *forest, ConfigReader *cr, TrainingSetSelection<float> *pTS){
+	cv::Point pt;
+    cv::Mat matConfusion;
+    char strOutput[200];
+	// Create a sample object, which contains the imageId
+	Sample<float> s;
+
+	std::cout << "Testing image nr. " << iImage+1 << "\n";
+
+	s.imageId = iImage;
+	cv::Rect box(0, 0, pTS->getImgWidth(s.imageId), pTS->getImgHeight(s.imageId));
+	cv::Mat mapResult = cv::Mat::ones(box.size(), CV_8UC1) * cr->numLabels;
+
+	
+	// ==============================================
+	// THE CLASSICAL CPU SOLUTION
+	// ==============================================
+
+	profiling("");
+	int lPXOff = cr->labelPatchWidth / 2;
+	int lPYOff = cr->labelPatchHeight / 2;
+
+	// Initialize the result matrices
+	vector<cv::Mat> result(cr->numLabels);
+	for(int j = 0; j < result.size(); ++j)
+		result[j] = Mat::zeros(box.size(), CV_32FC1);
+	
+	// Iterate over input image pixels
+	for(s.y = 0; s.y < box.height; ++s.y)
+	for(s.x = 0; s.x < box.width; ++s.x)
+	{
+		processPixel(s, forest, cr, lPXOff, lPYOff, box, result);
+	}
+
+	// Argmax of result ===> mapResult
+	size_t maxIdx;
+	for (pt.y = 0; pt.y < box.height; ++pt.y)
+	for (pt.x = 0; pt.x < box.width; ++pt.x)
+	{
+		maxIdx = 0;
+
+
+		for(int j = 1; j < cr->numLabels; ++j)
+		{
+
+			maxIdx = (result[j].at<float>(pt) > result[maxIdx].at<float>(pt)) ? j : maxIdx;
+		}
+
+		mapResult.at<uint8_t>(pt) = (uint8_t)maxIdx;
+	}
+
+	profiling("Prediction");
+
+	// Write segmentation map
+	sprintf(strOutput, "%s/segmap_1st_stage%04d.png", cr->outputFolder.c_str(), iImage);
+	if (cv::imwrite(strOutput, mapResult)==false)
+	{
+		cout<<"Failed to write to "<<strOutput<<endl;
+		return;
+	}
+
+	// Write RGB segmentation map
+	cv::Mat imgResultRGB;
+	convertLabelToRGB(mapResult, imgResultRGB);
+
+	sprintf(strOutput, "%s/segmap_1st_stage_RGB%04d.png", cr->outputFolder.c_str(), iImage);
+	if (cv::imwrite(strOutput, imgResultRGB)==false)
+	{
+		cout<<"Failed to write to "<<strOutput<<endl;
+		return;
+	} 
+}
+ 
 void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, TrainingSetSelection<float> *pTS)
 {
     int iImage;
-    cv::Point pt;
-    cv::Mat matConfusion;
-    char strOutput[200];
     
     // Process all test images
     // result goes into ====> result[].at<>(pt)
     for (iImage = 0; iImage < pTS->getNbImages(); ++iImage)
     {
-    	// Create a sample object, which contains the imageId
-        Sample<float> s;
-
-        std::cout << "Testing image nr. " << iImage+1 << "\n";
-
-        s.imageId = iImage;
-        cv::Rect box(0, 0, pTS->getImgWidth(s.imageId), pTS->getImgHeight(s.imageId));
-        cv::Mat mapResult = cv::Mat::ones(box.size(), CV_8UC1) * cr->numLabels;
-
-        
-        // ==============================================
-        // THE CLASSICAL CPU SOLUTION
-        // ==============================================
-
-        profiling("");
-        int lPXOff = cr->labelPatchWidth / 2;
-    	int lPYOff = cr->labelPatchHeight / 2;
-
-        // Initialize the result matrices
-        vector<cv::Mat> result(cr->numLabels);
-        for(int j = 0; j < result.size(); ++j)
-            result[j] = Mat::zeros(box.size(), CV_32FC1);
-        
-        // Iterate over input image pixels
-        for(s.y = 0; s.y < box.height; ++s.y)
-        for(s.x = 0; s.x < box.width; ++s.x)
-        {
-            // Obtain forest predictions
-            // Iterate over all trees
-            for(size_t t = 0; t < cr->numTrees; ++t)
-            {
-            	// The prediction itself.
-            	// The given Sample object s contains the imageId and the pixel coordinates.
-                // p is an iterator to a vector over labels (attribut hist of class Prediction)
-                // This labels correspond to a patch centered on position s
-                // (this is the structured version of a random forest!)
-                vector<uint32_t>::const_iterator p = forest[t].predictPtr(s);
-
-
-                for (pt.y=(int)s.y-lPYOff;pt.y<=(int)s.y+(int)lPYOff;++pt.y)
-                for (pt.x=(int)s.x-(int)lPXOff;pt.x<=(int)s.x+(int)lPXOff;++pt.x,++p)
-                {
-                	if (*p<0 || *p >= (size_t)cr->numLabels)
-                	{
-                		std::cerr << "Invalid label in prediction: " << (int) *p << "\n";
-                		exit(1);
-                	}
-
-                    if (box.contains(pt))
-                    {
-                        result[*p].at<float>(pt) += 1;
-
-                    }
-                }
-
-            }
-        }
-
-        // Argmax of result ===> mapResult
-        size_t maxIdx;
-        for (pt.y = 0; pt.y < box.height; ++pt.y)
-        for (pt.x = 0; pt.x < box.width; ++pt.x)
-        {
-            maxIdx = 0;
-
-
-            for(int j = 1; j < cr->numLabels; ++j)
-            {
-
-                maxIdx = (result[j].at<float>(pt) > result[maxIdx].at<float>(pt)) ? j : maxIdx;
-            }
-
-            mapResult.at<uint8_t>(pt) = (uint8_t)maxIdx;
-        }
-
-        profiling("Prediction");
-
-        // Write segmentation map
-        sprintf(strOutput, "%s/segmap_1st_stage%04d.png", cr->outputFolder.c_str(), iImage);
-        if (cv::imwrite(strOutput, mapResult)==false)
-        {
-            cout<<"Failed to write to "<<strOutput<<endl;
-            return;
-        }
-
-        // Write RGB segmentation map
-        cv::Mat imgResultRGB;
-        convertLabelToRGB(mapResult, imgResultRGB);
-
-        sprintf(strOutput, "%s/segmap_1st_stage_RGB%04d.png", cr->outputFolder.c_str(), iImage);
-        if (cv::imwrite(strOutput, imgResultRGB)==false)
-        {
-            cout<<"Failed to write to "<<strOutput<<endl;
-            return;
-        } 
+		processOneImage(iImage, forest, cr, pTS);
     }    
 }
 
