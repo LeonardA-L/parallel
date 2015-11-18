@@ -4,7 +4,7 @@ LD = g++
 WARNGCC= -Wno-sign-compare -Wno-reorder -Wno-unknown-pragmas -Wno-overloaded-virtual
 
 # --- With optimisation
-CPPFLAGS = -std=c++0x -DNDEBUG -O3 -msse2 -Wall $(WARNGCC)
+CPPFLAGS = -std=c++0x -DNDEBUG -O3 -msse2 -Wall $(WARNGCC) -fopenmp
 LDFLAGS = -DNEBUG -O3 -msse2
 
 # --- Debugging
@@ -14,7 +14,7 @@ LDFLAGS = -DNEBUG -O3 -msse2
 
 INCLUDE_DIR =
 LIB_DIR =
-LIBS = `pkg-config --libs opencv`
+LIBS = `pkg-config --libs opencv` -fopenmp
 
 simple:	sf1_cpu lab2rgb
 
@@ -35,5 +35,5 @@ lab2rgb: lab2rgb.o label.o
 	$(LD) $+ -o $@ $(LDFLAGS) $(LIB_DIR) $(LIBS)
 
 clean:
-	rm -f *.o sf1_cpu lab2rgb
+	rm -f *.o sf1_cpu lab2rgb /tmp/features/*
 
