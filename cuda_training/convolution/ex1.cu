@@ -26,6 +26,8 @@ Changelog:
 
 using namespace std;
 
+#define blockSize	50
+
 clock_t LastProfilingClock=clock();
 
 /***************************************************************************
@@ -72,11 +74,11 @@ void usage (char *com)
  The CPU version
  ***************************************************************************/
 
-void cpuFilter(unsigned char *imarr, unsigned char *, int rows, int cols){
-	for (int y=0; y<rows; ++y){
-		for (int x=0; x<cols; ++x){
+void cpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
+	for (int y=1; y<rows-1; ++y){
+		for (int x=1; x<cols-1; ++x){
 			//cout << (int)imarr[x*rows+y] << endl;
-			int total = 0;
+			/*int total = 0;
 			if(y > 0){	// !TOP
 				if(x > 0){	// !LEFT
 					total += imarr[(x-1)*rows+(y-1)] * 1;
@@ -102,10 +104,23 @@ void cpuFilter(unsigned char *imarr, unsigned char *, int rows, int cols){
 					total += imarr[(x+1)*rows+(y+1)] * 1;
 				}
 			}
+			total /= 16;*/
+			int total = (
+            4.0*in[x*rows+y] +
+            2.0*in[(x-1)*rows+y] +
+            2.0*in[(x+2)*rows+y] +
+            2.0*in[x*rows+y+1] +
+            2.0*in[x*rows+y-1] +
+            in[(x-1)*rows+y-1] +
+            in[(x-1)*rows+y+1] +
+            in[(x+1)*rows+y-1] +
+            in[(x+1)*rows+y+1]
+            )/16.0;
 			
-			total /= 16;
+			if(total < 0) total = 0;
+			if(total > 255) total = 255;
 			//cout << total << endl;
-			imarr[x*rows+y] = (char)total;
+			resarr[x*rows+y] = (unsigned char)total;
 		}
 	}
 }
@@ -114,13 +129,77 @@ void cpuFilter(unsigned char *imarr, unsigned char *, int rows, int cols){
  The GPU version - the kernel
  ***************************************************************************/
 
-// ...
+__global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_rows) {
+		int x = blockIdx.x * blockDim.x + threadIdx.x;
+		int y = blockIdx.y * blockDim.y + threadIdx.y;
+		int rows = *d_rows;
+		
+		int total = (
+		4.0*in[x*rows+y] +
+		2.0*in[(x-1)*rows+y] +
+		2.0*in[(x+2)*rows+y] +
+		2.0*in[x*rows+y+1] +
+		2.0*in[x*rows+y-1] +
+		in[(x-1)*rows+y-1] +
+		in[(x-1)*rows+y+1] +
+		in[(x+1)*rows+y-1] +
+		in[(x+1)*rows+y+1]
+		)/16.0;
+		
+		if(total < 0) total = 0;
+		if(total > 255) total = 255;
+		//cout << total << endl;
+		resarr[x*rows+y] = (unsigned char)total;
+}
 
  /***************************************************************************
  The GPU version - the host code
  ***************************************************************************/
 
-// ...
+void testError(int ok, char* message){
+	if(ok != cudaSuccess){
+		cerr << message << endl;
+	}
+}
+
+void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
+	int size = sizeof(unsigned char)*cols*rows;
+	unsigned char *d_in, *d_out;
+	int* d_rows;
+	
+	cudaError_t ok;
+	
+	ok=cudaMalloc((void**) &d_in, size);
+	testError(ok, "cudaMalloc 1 error");
+	ok=cudaMalloc((void**) &d_out, size);
+	testError(ok, "cudaMalloc 2 error");
+	ok=cudaMalloc((void**) &d_rows, sizeof(int));
+	testError(ok, "cudaMalloc 3 error");
+	
+	ok=cudaMemcpy(d_in, in, size, cudaMemcpyHostToDevice);
+	testError(ok, "cudaMemcpy 1 error");
+	ok=cudaMemcpy(d_rows, &rows, sizeof(int), cudaMemcpyHostToDevice);
+	testError(ok, "cudaMemcpy 2 error");
+	
+	dim3 dimBlock(rows, cols);
+	dim3 dimGrid(rows/blockSize, cols/blockSize);
+	
+	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_rows);
+	ok = cudaGetLastError();
+	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
+	testError(ok, "error kernel launch");
+	
+	ok=cudaMemcpy(resarr, d_out, size, cudaMemcpyDeviceToHost);
+	testError(ok, "cudaMemcpy deviceToHost error");
+	
+	ok=cudaFree(d_in);
+	testError(ok, "cudaFree 1 error");
+	ok=cudaFree(d_out);
+	testError(ok, "cudaFree 2 error");
+	ok=cudaFree(d_rows);
+	testError(ok, "cudaFree 3 error");
+	
+}
 	
 
 /***************************************************************************
@@ -180,13 +259,13 @@ int main (int argc, char **argv)
 	// Each version is run a 100 times to have 
 	// a better idea on run time
 	
-	for (int i=0; i<100; ++i)
-		cpuFilter(imarr, resarr, im.rows, im.cols);
+	//for (int i=0; i<100; ++i)
+	//	cpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("CPU version");
 
-	//for (int i=0; i<100; ++i)
-	//	gpuFilter(imarr, resarr, im.rows, im.cols);
+	for (int i=0; i<1; ++i)
+		gpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("GPU version");
 
