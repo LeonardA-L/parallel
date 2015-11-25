@@ -28,6 +28,9 @@
 
 #include "label.h"
 
+#define	DOCPU	false
+#define	DOGPU	!DOGPU
+
 using namespace std;
 using namespace vision;
 
@@ -82,7 +85,9 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
     
     // Process all test images
     // result goes into ====> result[].at<>(pt)
+#ifdef DOCPU
     #pragma omp parallel for
+#endif
     for (iImage = 0; iImage < pTS->getNbImages(); ++iImage)
     {
 			cv::Point pt;
@@ -113,7 +118,9 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
 			
 			// Iterate over input image pixels
 			int sx, sy;
+#ifdef DOCPU
 			#pragma omp parallel for
+#endif
 			for(sy = 0; sy < box.height; ++sy)
 			//#pragma omp parallel for
 			for(sx = 0; sx < box.width; ++sx)
