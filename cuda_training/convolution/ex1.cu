@@ -26,7 +26,7 @@ Changelog:
 
 using namespace std;
 
-#define blockSize	50
+#define blockSize	32
 
 clock_t LastProfilingClock=clock();
 
@@ -163,7 +163,7 @@ void testError(int ok, char* message){
 }
 
 void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
-	int size = sizeof(unsigned char)*cols*rows;
+	long size = sizeof(unsigned char)*cols*rows;
 	unsigned char *d_in, *d_out;
 	int* d_rows;
 	
@@ -181,16 +181,23 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	ok=cudaMemcpy(d_rows, &rows, sizeof(int), cudaMemcpyHostToDevice);
 	testError(ok, "cudaMemcpy 2 error");
 	
-	dim3 dimBlock(rows, cols);
-	dim3 dimGrid(rows/blockSize, cols/blockSize);
+	dim3 dimGrid(rows, cols);
+	dim3 dimBlock(rows/blockSize, cols/blockSize);
+	
+	cout << dimBlock.x << " " << dimBlock.y << endl;
+	cout << dimGrid.x << " " << dimGrid.y << endl;
 	
 	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_rows);
 	ok = cudaGetLastError();
 	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	testError(ok, "error kernel launch");
 	
-	ok=cudaMemcpy(resarr, d_out, size, cudaMemcpyDeviceToHost);
+	cout << &resarr << endl;
+	
+	ok=cudaMemcpy(&resarr, d_out, size, cudaMemcpyDeviceToHost);
 	testError(ok, "cudaMemcpy deviceToHost error");
+	ok = cudaGetLastError();
+	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	
 	ok=cudaFree(d_in);
 	testError(ok, "cudaFree 1 error");
@@ -252,7 +259,6 @@ int main (int argc, char **argv)
 	for (int x=0; x<im.cols; ++x)
 		imarr[x*im.rows+y] = im.at<unsigned char>(y,x);
 	unsigned char *resarr = new unsigned char [im.cols*im.rows];
-
 	profiling (NULL);
 
 
