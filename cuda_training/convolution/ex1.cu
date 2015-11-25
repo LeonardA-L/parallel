@@ -26,7 +26,7 @@ Changelog:
 
 using namespace std;
 
-#define blockSize	32
+#define blockSize	6
 
 clock_t LastProfilingClock=clock();
 
@@ -181,23 +181,21 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	ok=cudaMemcpy(d_rows, &rows, sizeof(int), cudaMemcpyHostToDevice);
 	testError(ok, "cudaMemcpy 2 error");
 	
-	dim3 dimGrid(rows, cols);
-	dim3 dimBlock(rows/blockSize, cols/blockSize);
+	dim3 dimBlock(blockSize, blockSize);
+	dim3 dimGrid(rows/blockSize, cols/blockSize);
 	
-	cout << dimBlock.x << " " << dimBlock.y << endl;
-	cout << dimGrid.x << " " << dimGrid.y << endl;
+	/*cout << dimBlock.x << " " << dimBlock.y << endl;
+	cout << dimGrid.x << " " << dimGrid.y << endl;*/
 	
 	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_rows);
 	ok = cudaGetLastError();
-	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
+	//cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	testError(ok, "error kernel launch");
 	
-	cout << &resarr << endl;
+	//cout << &resarr << endl;
 	
-	ok=cudaMemcpy(&resarr, d_out, size, cudaMemcpyDeviceToHost);
+	ok=cudaMemcpy(resarr, d_out, size, cudaMemcpyDeviceToHost);
 	testError(ok, "cudaMemcpy deviceToHost error");
-	ok = cudaGetLastError();
-	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	
 	ok=cudaFree(d_in);
 	testError(ok, "cudaFree 1 error");
@@ -265,12 +263,12 @@ int main (int argc, char **argv)
 	// Each version is run a 100 times to have 
 	// a better idea on run time
 	
-	//for (int i=0; i<100; ++i)
+	//for (int i=0; i<1000; ++i)
 	//	cpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("CPU version");
 
-	for (int i=0; i<1; ++i)
+	for (int i=0; i<1000; ++i)
 		gpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("GPU version");
