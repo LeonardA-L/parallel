@@ -1,5 +1,6 @@
 CC = g++
 LD = g++
+NVCC = nvcc
 
 WARNGCC= -Wno-sign-compare -Wno-reorder -Wno-unknown-pragmas -Wno-overloaded-virtual
 
@@ -25,10 +26,13 @@ testcpu:
 %.o: %.cpp 
 	$(CC) -c $(CPPFLAGS) $(INCLUDE_DIR) $< -o $@
 
+%.o: %.cu
+	$(NVCC) -c $< -o $@
+
 main_test_simple.o: main_test_simple.cpp
 	$(CC) -c $(CPPFLAGS) $(INCLUDE_DIR) $< -o $@
 
-sf1_cpu: ConfigReader.o ImageData.o ImageDataFloat.o labelfeature.o label.o main_test_simple.o
+sf1_cpu: ConfigReader.o ImageData.o ImageDataFloat.o labelfeature.o label.o GPU.o main_test_simple.o
 	$(LD) $+ -o $@ $(LDFLAGS) $(LIB_DIR) $(LIBS)
 
 lab2rgb: lab2rgb.o label.o
