@@ -6,14 +6,14 @@ WARNGCC= -Wno-sign-compare -Wno-reorder -Wno-unknown-pragmas -Wno-overloaded-vir
 
 # --- With optimisation
 CPPFLAGS = -std=c++0x -DNDEBUG -O3 -msse2 -Wall $(WARNGCC) -fopenmp
-LDFLAGS = -DNEBUG -O3 -msse2
+LDFLAGS = -DNEBUG -O3 -msse2 -L/usr/local/cuda-7.5/lib64/ -lcudart
 
 # --- Debugging
 #CPPFLAGS = -std=c++0x -g -Wall $(WARNGCC) 
 #LDFLAGS = 
 
 
-INCLUDE_DIR =
+INCLUDE_DIR = -I/usr/local/cuda-7.5/include
 LIB_DIR =
 LIBS = `pkg-config --libs opencv` -fopenmp
 
