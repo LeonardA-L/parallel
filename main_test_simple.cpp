@@ -27,9 +27,10 @@
 #include "StrucClassSSF.h"
 
 #include "label.h"
+#include "GPU.cuh"
 
 #define	DOCPU	false
-#define	DOGPU	!DOGPU
+#define	DOGPU	!DOCPU
 
 using namespace std;
 using namespace vision;
@@ -85,9 +86,7 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
     
     // Process all test images
     // result goes into ====> result[].at<>(pt)
-#ifdef DOCPU
     #pragma omp parallel for
-#endif
     for (iImage = 0; iImage < pTS->getNbImages(); ++iImage)
     {
 			cv::Point pt;
@@ -102,7 +101,8 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
 			cv::Rect box(0, 0, pTS->getImgWidth(s.imageId), pTS->getImgHeight(s.imageId));
 			cv::Mat mapResult = cv::Mat::ones(box.size(), CV_8UC1) * cr->numLabels;
 
-			
+#if DOCPU
+cout << "CPU Solution" << endl;
 			// ==============================================
 			// THE CLASSICAL CPU SOLUTION
 			// ==============================================
@@ -118,9 +118,7 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
 			
 			// Iterate over input image pixels
 			int sx, sy;
-#ifdef DOCPU
 			#pragma omp parallel for
-#endif
 			for(sy = 0; sy < box.height; ++sy)
 			//#pragma omp parallel for
 			for(sx = 0; sx < box.width; ++sx)
@@ -195,7 +193,38 @@ void testStructClassForest(StrucClassSSF<float> *forest, ConfigReader *cr, Train
 				cout<<"Failed to write to "<<strOutput<<endl;
 				//return;
 			} 
-    }    
+#endif
+#if DOGPU
+cout << "GPU solution" << endl;
+			float *features, *features_integral;
+			int noChannels;
+				   
+			// ==============================================
+			// THE GPU SOLUTION
+			// ==============================================
+
+			int16_t w_integral, h_integral;
+			// Get a flattened array containing all features for this image
+			pTS->getFlattenedFeatures(iImage, &features, &noChannels);
+			pTS->getFlattenedIntegralFeatures(iImage, &features_integral, &w_integral, &h_integral);
+			unsigned int *resultGPU = new unsigned int [box.height*box.width*cr->numLabels];
+			unsigned int *_gpuResult;
+			float *_gpuFeatures, *_gpuFeaturesIntegral;
+			
+			profiling("");
+
+			// Prepare the kernel call:
+			// Transfer the features to the GPU
+			// Prepare an array for the results (on the GPU), initialized to zero 
+			preKernel(features, features_integral, &_gpuFeatures, &_gpuFeaturesIntegral, &_gpuResult,
+				box.width, box.height, w_integral, h_integral, noChannels, cr->numLabels);
+				
+			// Kernel
+			
+			// Post kernel
+		
+#endif
+    }
 }
 
 /***************************************************************************

@@ -209,6 +209,64 @@ template <typename FeatureType> class TrainingSet
 template <class FeatureType> class TrainingSetSelection : public TrainingSet<FeatureType>
 {
   public:
+  
+	/***************************************************************************
+ 	 For the GPU version: flatten all features in a single 1D table
+ 	 ***************************************************************************/
+
+    virtual void getFlattenedFeatures(uint16_t imageId, FeatureType **out_features, int *out_nbChannels) const
+    {
+        vector<cv::Mat> *pFeatureImages = this->pImageData->getFeatureImages(vectSelectedImagesIndices[imageId]);
+        assert(pFeatureImages!=NULL);
+
+        FeatureType *flat = (FeatureType *) malloc (sizeof(FeatureType)*(this->iWidth)*(this->iHeight)*(this->nChannels));
+        if (flat==NULL)
+        {
+        	std::cerr << "Cannot allocate flat feature data\n";
+        	exit(1);
+        }
+        
+        for (int c=0; c<this->nChannels; ++c)
+        for (int x=0; x<this->iWidth; ++x)
+        for (int y=0; y<this->iHeight; ++y)
+        	flat[y+x*(this->iHeight)+c*(this->iHeight)*(this->iWidth)] =       
+        		(*pFeatureImages)[c].at<FeatureType>(y, x);
+        
+        *out_features = flat;
+        *out_nbChannels = this->nChannels;
+    }
+
+    /***************************************************************************
+ 	 For the GPU version: flatten all integral features in a single 1D table
+ 	 ***************************************************************************/
+
+    virtual void getFlattenedIntegralFeatures(uint16_t imageId, FeatureType **out_features_integral,
+    	int16_t *out_w, int16_t *out_h) const
+    {
+        vector<cv::Mat> *pFeatureImages = this->pImageData->getFeatureIntegralImages(vectSelectedImagesIndices[imageId]);
+        assert(pFeatureImages!=NULL);
+        assert(this->pImageData->UseIntegralImages()==true);
+
+        int16_t w = (*pFeatureImages)[0].cols;
+        int16_t h = (*pFeatureImages)[0].rows;
+        FeatureType *flat = (FeatureType *) malloc (sizeof(FeatureType)*w*h*(this->nChannels));
+        if (flat==NULL)
+        {
+        	std::cerr << "Cannot allocate flat integral feature data\n";
+        	exit(1);
+        }
+        
+        for (int c=0; c<this->nChannels; ++c)
+        for (int x=0; x<w; ++x)
+        for (int y=0; y<h; ++y)
+        	flat[y+x*h+c*h*w]  =
+        		(*pFeatureImages)[c].at<FeatureType>(y, x);
+        
+        *out_w = w;
+        *out_h = h;
+        *out_features_integral = flat;
+    }
+  
     TrainingSetSelection(int nblab, ImageData *pData):TrainingSet<FeatureType>(nblab, pData)
     {
     }

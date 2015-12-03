@@ -26,7 +26,7 @@ Changelog:
 
 using namespace std;
 
-#define blockSize	6
+#define blockSize	8
 
 clock_t LastProfilingClock=clock();
 
