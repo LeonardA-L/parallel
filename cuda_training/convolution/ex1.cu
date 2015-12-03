@@ -258,17 +258,17 @@ int main (int argc, char **argv)
 		imarr[x*im.rows+y] = im.at<unsigned char>(y,x);
 	unsigned char *resarr = new unsigned char [im.cols*im.rows];
 	profiling (NULL);
-
+	int nMax = 1000;
 
 	// Each version is run a 100 times to have 
 	// a better idea on run time
 	
-	//for (int i=0; i<1000; ++i)
-	//	cpuFilter(imarr, resarr, im.rows, im.cols);
+	for (int i=0; i<nMax; ++i)
+		cpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("CPU version");
 
-	for (int i=0; i<1000; ++i)
+	for (int i=0; i<nMax; ++i)
 		gpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("GPU version");
