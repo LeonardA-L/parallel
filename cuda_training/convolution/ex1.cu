@@ -130,26 +130,52 @@ void cpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
  The GPU version - the kernel
  ***************************************************************************/
 
-__global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_rows) {
+__global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_cols) {
 		int x = blockIdx.x * blockDim.x + threadIdx.x;
 		int y = blockIdx.y * blockDim.y + threadIdx.y;
-		int rows = *d_rows;
+		int cols = *d_cols;
 		
-		int shx = threadIdx.x;
-		int shy = threadIdx.y;
+		int shx = threadIdx.x+1;
+		int shy = threadIdx.y+1;
 		
-		__shared__ unsigned char shIn[TILE_WIDTH * TILE_WIDTH];
+		__shared__ unsigned char shIn[(TILE_WIDTH+2) * (TILE_WIDTH+2)];
 		
-		shIn[threadIdx.y * blockSize +	threadIdx.x] = in[x*rows+y];
+		int shift = 0;
+		
+		shIn[shy * (TILE_WIDTH) +	shx + shift] = in[x+y*cols];
+		
+		// Corners
+		if(shx == 1 && shy == 1){
+			shIn[(shy-1) * (TILE_WIDTH) + shx-1 + shift] = in[(x-1)+(y-1)*cols];
+		}
+		else if(shx == TILE_WIDTH && shy == TILE_WIDTH){
+			shIn[(shy+1) * (TILE_WIDTH) + shx+1 + shift] = in[(x+1)+(y+1)*cols];
+		}
+		
+		// First Col
+		if(shx == 1){
+			shIn[shy * (TILE_WIDTH) + 0 + shift] = in[(x-1)+(y)*cols];
+		}
+		else if(shx == TILE_WIDTH-1){
+			shIn[shy * (TILE_WIDTH) + shx + shift] = in[(x+1)+(y)*cols];
+		}
+		
+		// First row
+		if(shy == 1){
+			shIn[(shy-1) * (TILE_WIDTH) + shx + shift] = in[(x-1)+y*cols];
+		}
+		else if(shy == TILE_WIDTH-1){
+			shIn[(shy+1) * (TILE_WIDTH) + shx + shift] = in[(x+1)+y*cols];
+		}
+		
 		
 		__syncthreads();
 		
 		int total;
-		if(shx > 0 && shy > 0 && shx < blockSize-1 && shy < blockSize-1){
-			total = (
+		total = (
 			4.0*shIn[shx+shy*blockSize] +
 			2.0*shIn[(shx-1)+shy*blockSize] +
-			2.0*shIn[(shx+2)+shy*blockSize] +
+			2.0*shIn[(shx+1)+shy*blockSize] +
 			2.0*shIn[shx+(shy+1)*blockSize] +
 			2.0*shIn[shx+(shy-1)*blockSize] +
 			shIn[(shx-1)+(shy-1)*blockSize] +
@@ -157,10 +183,9 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_rows)
 			shIn[(shx+1)+(shy-1)*blockSize] +
 			shIn[(shx+1)+(shy+1)*blockSize]
 			)/16.0;
-			//total = 255;
-		}
-		else{
-			// Non shared memory
+		
+		/*
+		 // Non shared memory
 			total = (
 			4.0*in[x*rows+y] +
 			2.0*in[(x-1)*rows+y] +
@@ -172,12 +197,12 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_rows)
 			in[(x+1)*rows+y-1] +
 			in[(x+1)*rows+y+1]
 			)/16.0;
-		}
+		*/
 		
 		if(total < 0) total = 0;
 		if(total > 255) total = 255;
 		//cout << total << endl;
-		resarr[x*rows+y] = (unsigned char)total;
+		resarr[x+y*cols] = (unsigned char)total;
 }
 
  /***************************************************************************
@@ -193,7 +218,7 @@ void testError(int ok, char* message){
 void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	long size = sizeof(unsigned char)*cols*rows;
 	unsigned char *d_in, *d_out;
-	int* d_rows;
+	int* d_cols;
 	
 	cudaError_t ok;
 	
@@ -201,12 +226,12 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	testError(ok, "cudaMalloc 1 error");
 	ok=cudaMalloc((void**) &d_out, size);
 	testError(ok, "cudaMalloc 2 error");
-	ok=cudaMalloc((void**) &d_rows, sizeof(int));
+	ok=cudaMalloc((void**) &d_cols, sizeof(int));
 	testError(ok, "cudaMalloc 3 error");
 	
 	ok=cudaMemcpy(d_in, in, size, cudaMemcpyHostToDevice);
 	testError(ok, "cudaMemcpy 1 error");
-	ok=cudaMemcpy(d_rows, &rows, sizeof(int), cudaMemcpyHostToDevice);
+	ok=cudaMemcpy(d_cols, &cols, sizeof(int), cudaMemcpyHostToDevice);
 	testError(ok, "cudaMemcpy 2 error");
 	
 	dim3 dimBlock(blockSize, blockSize);
@@ -215,9 +240,9 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	/*cout << dimBlock.x << " " << dimBlock.y << endl;
 	cout << dimGrid.x << " " << dimGrid.y << endl;*/
 	
-	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_rows);
+	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_cols);
 	ok = cudaGetLastError();
-	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
+	//cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	testError(ok, "error kernel launch");
 	
 	//cout << &resarr << endl;
@@ -229,7 +254,7 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	testError(ok, "cudaFree 1 error");
 	ok=cudaFree(d_out);
 	testError(ok, "cudaFree 2 error");
-	ok=cudaFree(d_rows);
+	ok=cudaFree(d_cols);
 	testError(ok, "cudaFree 3 error");
 	
 }
@@ -283,7 +308,7 @@ int main (int argc, char **argv)
 	unsigned char *imarr = new unsigned char [im.cols*im.rows];
 	for (int y=0; y<im.rows; ++y)
 	for (int x=0; x<im.cols; ++x)
-		imarr[x*im.rows+y] = im.at<unsigned char>(y,x);
+		imarr[x+y*im.cols] = im.at<unsigned char>(y,x);
 	unsigned char *resarr = new unsigned char [im.cols*im.rows];
 	profiling (NULL);
 	int nMax = 1000;
@@ -304,7 +329,7 @@ int main (int argc, char **argv)
 	// Copy the linear array back to the cv::Mat
 	for (int y=0; y<im.rows; ++y)
 	for (int x=0; x<im.cols; ++x)
-		result.at<unsigned char>(y,x) = resarr[x*im.rows+y];
+		result.at<unsigned char>(y,x) = resarr[x+y*im.cols];
 
 	imwrite (outputfname, result);
 
