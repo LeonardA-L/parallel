@@ -138,8 +138,8 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_cols)
 		int shx = threadIdx.x+1;
 		int shy = threadIdx.y+1;
 		
-		__shared__ unsigned char shIn[(TILE_WIDTH+2) * (TILE_WIDTH+2)];
-		
+		__shared__ unsigned char shIn[(TILE_WIDTH) * (TILE_WIDTH)];
+		/*
 		int shift = 0;
 		
 		shIn[shy * (TILE_WIDTH) +	shx + shift] = in[x+y*cols];
@@ -154,34 +154,34 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_cols)
 		
 		// First Col
 		if(shx == 1){
-			shIn[shy * (TILE_WIDTH) + 0 + shift] = in[(x-1)+(y)*cols];
+			shIn[shy * (TILE_WIDTH) + shx-1 + shift] = in[(x-1)+(y)*cols];
 		}
-		else if(shx == TILE_WIDTH-1){
-			shIn[shy * (TILE_WIDTH) + shx + shift] = in[(x+1)+(y)*cols];
+		else if(shx == blockSize-1){
+			shIn[shy * (TILE_WIDTH) + shx+1 + shift] = in[(x+1)+(y)*cols];
 		}
 		
 		// First row
 		if(shy == 1){
 			shIn[(shy-1) * (TILE_WIDTH) + shx + shift] = in[(x-1)+y*cols];
 		}
-		else if(shy == TILE_WIDTH-1){
+		else if(shy == blockSize-1){
 			shIn[(shy+1) * (TILE_WIDTH) + shx + shift] = in[(x+1)+y*cols];
 		}
-		
+		*/
 		
 		__syncthreads();
 		
 		int total;
 		total = (
-			4.0*shIn[shx+shy*blockSize] +
-			2.0*shIn[(shx-1)+shy*blockSize] +
-			2.0*shIn[(shx+1)+shy*blockSize] +
-			2.0*shIn[shx+(shy+1)*blockSize] +
-			2.0*shIn[shx+(shy-1)*blockSize] +
-			shIn[(shx-1)+(shy-1)*blockSize] +
-			shIn[(shx-1)+(shy+1)*blockSize] +
-			shIn[(shx+1)+(shy-1)*blockSize] +
-			shIn[(shx+1)+(shy+1)*blockSize]
+			4.0*shIn[shx+shy*TILE_WIDTH] +
+			2.0*shIn[(shx-1)+shy*TILE_WIDTH] +
+			2.0*shIn[(shx+1)+shy*TILE_WIDTH] +
+			2.0*shIn[shx+(shy+1)*TILE_WIDTH] +
+			2.0*shIn[shx+(shy-1)*TILE_WIDTH] +
+			shIn[(shx-1)+(shy-1)*TILE_WIDTH] +
+			shIn[(shx-1)+(shy+1)*TILE_WIDTH] +
+			shIn[(shx+1)+(shy-1)*TILE_WIDTH] +
+			shIn[(shx+1)+(shy+1)*TILE_WIDTH]
 			)/16.0;
 		
 		/*
@@ -205,6 +205,56 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_cols)
 		resarr[x+y*cols] = (unsigned char)total;
 }
 
+__global__ void onePixelLarge(unsigned char *in, unsigned char *resarr, int * d_cols) {
+		int x = blockIdx.x * (blockDim.x-2) + threadIdx.x;
+		int y = blockIdx.y * (blockDim.y-2) + threadIdx.y;
+		int cols = *d_cols;
+		
+		int shx = threadIdx.x;
+		int shy = threadIdx.y;
+		
+		__shared__ unsigned char shIn[(TILE_WIDTH) * (TILE_WIDTH)];
+		
+		shIn[shy * (TILE_WIDTH) + shx] = in[x+y*cols];
+		
+		__syncthreads();
+		if(shx == 0 || shx == TILE_WIDTH-1 || shy == 0 || shy == TILE_WIDTH-1 ){
+			return;
+		}
+		int total=0;
+		
+		total = (
+			4.0*shIn[shx+shy*TILE_WIDTH] +
+			2.0*shIn[(shx-1)+shy*TILE_WIDTH] +
+			2.0*shIn[(shx+1)+shy*TILE_WIDTH] +
+			2.0*shIn[shx+(shy+1)*TILE_WIDTH] +
+			2.0*shIn[shx+(shy-1)*TILE_WIDTH] +
+			shIn[(shx-1)+(shy-1)*TILE_WIDTH] +
+			shIn[(shx-1)+(shy+1)*TILE_WIDTH] +
+			shIn[(shx+1)+(shy-1)*TILE_WIDTH] +
+			shIn[(shx+1)+(shy+1)*TILE_WIDTH]
+			)/16.0;
+		
+		/*
+		 // Non shared memory
+			total = (
+			4.0*in[x*rows+y] +
+			2.0*in[(x-1)*rows+y] +
+			2.0*in[(x+2)*rows+y] +
+			2.0*in[x*rows+y+1] +
+			2.0*in[x*rows+y-1] +
+			in[(x-1)*rows+y-1] +
+			in[(x-1)*rows+y+1] +
+			in[(x+1)*rows+y-1] +
+			in[(x+1)*rows+y+1]
+			)/16.0;
+		*/
+		
+		if(total < 0) total = 0;
+		if(total > 255) total = 255;
+		//cout << total << endl;
+		resarr[x+y*cols] = (unsigned char)total;
+}
  /***************************************************************************
  The GPU version - the host code
  ***************************************************************************/
@@ -235,12 +285,12 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	testError(ok, "cudaMemcpy 2 error");
 	
 	dim3 dimBlock(blockSize, blockSize);
-	dim3 dimGrid(rows/blockSize, cols/blockSize);
+	dim3 dimGrid(rows/(blockSize-2), cols/(blockSize-2));
 	
 	/*cout << dimBlock.x << " " << dimBlock.y << endl;
 	cout << dimGrid.x << " " << dimGrid.y << endl;*/
 	
-	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_cols);
+	onePixelLarge<<<dimGrid, dimBlock>>>(d_in, d_out, d_cols);
 	ok = cudaGetLastError();
 	//cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	testError(ok, "error kernel launch");
