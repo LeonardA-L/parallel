@@ -26,7 +26,8 @@ Changelog:
 
 using namespace std;
 
-#define blockSize	8
+#define blockSize	16
+#define TILE_WIDTH	blockSize
 
 clock_t LastProfilingClock=clock();
 
@@ -134,17 +135,44 @@ __global__ void onePixel(unsigned char *in, unsigned char *resarr, int * d_rows)
 		int y = blockIdx.y * blockDim.y + threadIdx.y;
 		int rows = *d_rows;
 		
-		int total = (
-		4.0*in[x*rows+y] +
-		2.0*in[(x-1)*rows+y] +
-		2.0*in[(x+2)*rows+y] +
-		2.0*in[x*rows+y+1] +
-		2.0*in[x*rows+y-1] +
-		in[(x-1)*rows+y-1] +
-		in[(x-1)*rows+y+1] +
-		in[(x+1)*rows+y-1] +
-		in[(x+1)*rows+y+1]
-		)/16.0;
+		int shx = threadIdx.x;
+		int shy = threadIdx.y;
+		
+		__shared__ unsigned char shIn[TILE_WIDTH * TILE_WIDTH];
+		
+		shIn[threadIdx.y * blockSize +	threadIdx.x] = in[x*rows+y];
+		
+		__syncthreads();
+		
+		int total;
+		if(shx > 0 && shy > 0 && shx < blockSize-1 && shy < blockSize-1){
+			total = (
+			4.0*shIn[shx+shy*blockSize] +
+			2.0*shIn[(shx-1)+shy*blockSize] +
+			2.0*shIn[(shx+2)+shy*blockSize] +
+			2.0*shIn[shx+(shy+1)*blockSize] +
+			2.0*shIn[shx+(shy-1)*blockSize] +
+			shIn[(shx-1)+(shy-1)*blockSize] +
+			shIn[(shx-1)+(shy+1)*blockSize] +
+			shIn[(shx+1)+(shy-1)*blockSize] +
+			shIn[(shx+1)+(shy+1)*blockSize]
+			)/16.0;
+			//total = 255;
+		}
+		else{
+			// Non shared memory
+			total = (
+			4.0*in[x*rows+y] +
+			2.0*in[(x-1)*rows+y] +
+			2.0*in[(x+2)*rows+y] +
+			2.0*in[x*rows+y+1] +
+			2.0*in[x*rows+y-1] +
+			in[(x-1)*rows+y-1] +
+			in[(x-1)*rows+y+1] +
+			in[(x+1)*rows+y-1] +
+			in[(x+1)*rows+y+1]
+			)/16.0;
+		}
 		
 		if(total < 0) total = 0;
 		if(total > 255) total = 255;
@@ -189,7 +217,7 @@ void gpuFilter(unsigned char *in, unsigned char * resarr, int rows, int cols){
 	
 	onePixel<<<dimGrid, dimBlock>>>(d_in, d_out, d_rows);
 	ok = cudaGetLastError();
-	//cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
+	cerr << "CUDA Status :"<< cudaGetErrorString(ok) << endl;
 	testError(ok, "error kernel launch");
 	
 	//cout << &resarr << endl;
@@ -262,12 +290,12 @@ int main (int argc, char **argv)
 
 	// Each version is run a 100 times to have 
 	// a better idea on run time
-	
+	/*
 	for (int i=0; i<nMax; ++i)
 		cpuFilter(imarr, resarr, im.rows, im.cols);
 
 	profiling ("CPU version");
-
+	*/
 	for (int i=0; i<nMax; ++i)
 		gpuFilter(imarr, resarr, im.rows, im.cols);
 
